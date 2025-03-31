@@ -1,5 +1,64 @@
 extends Control
 
+const HEADERS := "HTTP/1.1 200 OK\nContent-Type: text/html; charset=utf-8\nContent-Length: %s\n\n"
+const TEMPLATE := """
+<html>
+<style>
+	@import url('https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400;1,700&display=swap');
+
+	:root {
+		font-family: "Atkinson Hyperlegible";
+	}
+
+	body {
+		margin: 0px;
+		background: linear-gradient(45deg, #09111a, #0e1620);
+	}
+
+	.centered {
+		display: flex;
+		width: 100vw;
+		height: 100vh;
+		max-width: 100%%;
+		max-height: 100%%;
+		justify-content: center;
+		align-items: center;
+	}
+
+	.card {
+		background-color: #0e1e2c;
+		padding: 32px;
+		border-radius: 64px;
+		box-shadow: 0px 32px 32px rgba(0, 0, 0, 0.356);
+	}
+
+	h1 {
+		color: rgb(216, 224, 230);
+		margin: 0px;
+		font-size: 3em;
+	}
+
+	* {
+		color: rgba(216, 224, 230, 0.753);
+		margin: 0px;
+		font-size: 24px;
+	}
+</style>
+<div class="centered">
+	<div class="card">
+		<h1>
+			%s
+		</h1>
+		This window can be closed now
+	</div>
+</div>
+
+</html>
+"""
+
+const SUCCESS_RESPONSE := TEMPLATE % "Authentication succeeded"
+const FAILED_RESPONSE := TEMPLATE % "Authentication failed for reason '{0}'"
+
 
 var client_info: OAuthSecrets
 
@@ -20,23 +79,33 @@ func _ready() -> void:
 	server.listen(client_info.localhost_port)
 	server.oauth_completed.connect(func(params: Dictionary[String, String]):
 		print("Got authorization key")
-		server.stop()
+		if "error" in params:
+			server.send_data(HEADERS, FAILED_RESPONSE.format([params.error]))
+			return
+		else:
+			server.send_data(HEADERS, SUCCESS_RESPONSE)
+		#server.stop()
+		#return
 		if params.state == secret:
 			print("secret does match")
 		else:
 			print("secret doesn't match")
 		auth_key = params.code
 		print("Getting token")
-		print(error_string(http_request.request("https://accounts.spotify.com/api/token", [
+		http_request.request("https://accounts.spotify.com/api/token", [
 			"content-type: application/x-www-form-urlencoded",
 			"Authorization: Basic " + Marshalls.utf8_to_base64(client_info.client_id + ":" + client_info.client_secret),
 		], HTTPClient.METHOD_POST, convert_url_params({
 			"code": auth_key,
 			"redirect_uri": "http://localhost:7158",
 			"grant_type": "authorization_code"
-		}))))
+		}))
 	)
 	authenticate()
+
+
+func _exit_tree() -> void:
+	server.stop()
 
 
 func _process(delta: float) -> void:
@@ -84,15 +153,20 @@ class OAuthServer extends TCPServer:
 				finished = true
 				oauth_completed.emit(parse_headers())
 			if peer.get_available_bytes():
+				# who needs error handling when you can have error unhandling
 				content.append_array(peer.get_data(peer.get_available_bytes())[1])
 	
 	func is_finished() -> bool:
 		return finished
 	
-	# just returns the code since that's all we need
 	func parse_headers(headers: String = content.get_string_from_ascii()) -> Dictionary[String, String]:
-		var start_index := headers.find("/?") + 2
+		var start_index := headers.find("/?")
+		if start_index == -1:
+			return { }
+		start_index += 2
 		var end_index := headers.find(" ", start_index)
+		if end_index == -1:
+			return { }
 		var params := headers.substr(start_index, end_index - start_index)
 		var d: Dictionary[String, String]
 		var params_arr := params.split("&")
@@ -100,6 +174,14 @@ class OAuthServer extends TCPServer:
 			var param_split := param.split("=")
 			d[param_split[0]] = param_split[1]
 		return d
+	
+	## Sends data to the connected peer if there is one. [param headers] should contain one
+	## replacement ([code]%s[/code]) which will be replaced by the length of [param content]
+	func send_data(headers: String, content: String) -> void:
+		if not peer:
+			return
+		peer.put_data((headers % content.length()).to_ascii_buffer())
+		peer.put_data(content.to_utf8_buffer())
 
 
 func _on_button_pressed() -> void:
