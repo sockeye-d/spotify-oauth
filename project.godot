@@ -10,10 +10,14 @@ config_version=5
 
 [application]
 
-config/name="spotify-oath"
+config/name="spotify-oauth"
 run/main_scene="uid://c27baiq4gh320"
 config/features=PackedStringArray("4.4")
 config/icon="res://icon.svg"
+
+[godots]
+
+version_hint="4.4-stable"
 
 [rendering]
 
