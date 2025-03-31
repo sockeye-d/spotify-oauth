@@ -20,6 +20,7 @@ func _ready() -> void:
 	server.listen(client_info.localhost_port)
 	server.oauth_completed.connect(func(params: Dictionary[String, String]):
 		print("Got authorization key")
+		server.stop()
 		if params.state == secret:
 			print("secret does match")
 		else:
